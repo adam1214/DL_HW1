@@ -2,7 +2,6 @@ import numpy as np
 import gzip
 import matplotlib.pyplot as plt
 import random
-import pdb
 
 random.seed(123)
 np.random.seed(123)
@@ -132,12 +131,12 @@ def cal_acc(preds, labels):
     for i in range(0, len(preds), 1):
         if preds[i] == labels[i]:
             correct_cnt += 1
-    return round(correct_cnt*100/len(preds), 2)
+    return correct_cnt*100/len(preds)
     
 
 if __name__ == '__main__': 
     BATCH_SIZE = 20
-    EPOCH = 30
+    EPOCH = 50
     LR = 0.01
     
     train_data = load_data('./MNIST/train-images-idx3-ubyte.gz', 28, 60000)
@@ -162,8 +161,17 @@ if __name__ == '__main__':
     dnn3_affine = AffineComponent(20, 10)
     output = SoftmaxOutputComponent(10)
     
+    all_acc_pair = []
+    train_loss_list = []
+    val_loss_list = []
     for i in range(0, EPOCH, 1):
-        epoch_loss = 0
+        train_data_labels = np.concatenate((train_data, train_labels[:, np.newaxis]), axis=1)
+        np.random.shuffle(train_data_labels)
+        train_data = train_data_labels[:, :-1]
+        train_labels = train_data_labels[:, -1].astype(np.int64)
+        
+        epoch_loss_train = 0
+        epoch_loss_val = 0
         
         # training
         for train_index in range(0, train_data.shape[0], BATCH_SIZE):
@@ -172,7 +180,7 @@ if __name__ == '__main__':
             
             probs = network_propagate(batch_data)
             loss = caculate_loss(probs, batch_labels)
-            epoch_loss += loss
+            epoch_loss_train += loss
             network_backpropagate(probs, batch_labels)
         
         # valiation
@@ -182,8 +190,41 @@ if __name__ == '__main__':
             batch_labels = val_labels[val_index:(val_index+BATCH_SIZE)]
             
             probs = network_propagate(batch_data)
+            loss = caculate_loss(probs, batch_labels)
+            epoch_loss_val += loss
             preds_batch = np.argmax(probs, axis=1).tolist()
             preds += preds_batch
         val_acc = cal_acc(preds, val_labels.tolist())
         
-        print("EPOCH:", i, "train_loss:", epoch_loss/train_data.shape[0], "val_acc:", val_acc)
+        # testing
+        preds = []
+        for test_index in range(0, test_data.shape[0], BATCH_SIZE):
+            batch_data = test_data[test_index:(test_index+BATCH_SIZE)]
+            batch_labels = test_labels[test_index:(test_index+BATCH_SIZE)]
+            
+            probs = network_propagate(batch_data)
+            preds_batch = np.argmax(probs, axis=1).tolist()
+            preds += preds_batch
+        test_acc = cal_acc(preds, test_labels.tolist())
+        print("EPOCH:", i, "train_loss:", round(epoch_loss_train/train_data.shape[0], 5), "val_acc:", round(val_acc, 2), "%")
+        all_acc_pair.append((val_acc, test_acc))
+        train_loss_list.append(epoch_loss_train/train_data.shape[0])
+        val_loss_list.append(epoch_loss_val/val_data.shape[0])
+        
+    select_epoch = 0
+    max_val_acc = 0
+    for i in range(0, EPOCH, 1):
+        if all_acc_pair[i][0] > max_val_acc:
+            select_epoch = i
+            max_val_acc = all_acc_pair[i][0]
+    
+    print('Select epoch', select_epoch, 'based on validation set')
+    print('Epoch', select_epoch, 'on testing set:', round(all_acc_pair[select_epoch][1], 2), '%')
+    
+    plt.figure()
+    plt.plot(np.arange(EPOCH), train_loss_list, color = 'r', label="training loss")
+    plt.plot(np.arange(EPOCH), val_loss_list, color = 'b', label="validation loss")
+    plt.legend(loc='upper right')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.savefig('train_val_loss.png')
